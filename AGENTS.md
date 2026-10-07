@@ -143,7 +143,7 @@ document.addEventListener('scriptLoaded:library-name', (e) => {
 3. **Deploy**: Merge to `main` branch triggers GitHub Actions that:
    - Creates semver tag (patch by default, use `#major` or `#minor` in commit message for higher bumps)
    - Makes scripts available via jsDelivr CDN
-4. **CDN**: Starter scripts are served from `https://cdn.jsdelivr.net/gh/igniteagency/webflow-js-starter-new/dist/prod/`
+4. **CDN**: AMS scripts are served from `https://cdn.jsdelivr.net/gh/igniteagency/ams-webflow-site/dist/prod/`
 
 ## Development Guidelines
 

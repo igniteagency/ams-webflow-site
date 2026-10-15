@@ -8,7 +8,7 @@ window.Webflow.push(() => {
   if (document.documentElement.dataset.wfPage !== HOME_PAGE_ID) return;
 
   const hero = document.querySelector('[data-el="home-hero"]');
-  const source = hero?.querySelector<HTMLImageElement>('[data-el="home-hero-logo"]');
+  const source = hero?.querySelector<SVGSVGElement>('[data-el="home-hero-logo"] svg');
   const nav = document.querySelector('[data-el="navbar"]');
   const brand = nav?.querySelector('[data-el="navbar-brand"]');
   const link = brand?.querySelector('a');
@@ -25,32 +25,36 @@ window.Webflow.push(() => {
 
   async function start(
     hero: HTMLElement,
-    source: HTMLImageElement,
+    source: SVGSVGElement,
     nav: HTMLElement,
     name: HTMLElement,
     mark: HTMLElement
   ) {
     if (typeof Flip === 'undefined') await window.loadScript(FLIP_URL);
     await document.fonts.ready;
-    if (!source.complete) await source.decode();
     gsap.registerPlugin(Flip, ScrollTrigger);
 
     const reduced = matchMedia('(prefers-reduced-motion: reduce)');
     const originals = new Map(
       [source, nav, name, mark].map((element) => [element, element.getAttribute('style')])
     );
-    const restore = (element: Element) => {
-      const style = originals.get(element as HTMLElement);
+    const restore = (element: HTMLElement | SVGSVGElement) => {
+      const style = originals.get(element);
       if (style == null) element.removeAttribute('style');
       else element.setAttribute('style', style);
     };
-    const traveller = document.createElement('img');
-    traveller.src = source.currentSrc || source.src;
-    traveller.alt = '';
+    const traveller = document.createElement('div');
+    const travellingMark = source.cloneNode(true) as SVGSVGElement;
+    for (const attribute of ['id', 'class', 'style', 'data-w-id', 'data-flip-id']) {
+      travellingMark.removeAttribute(attribute);
+    }
+    gsap.set(travellingMark, { display: 'block', width: '100%', height: '100%' });
+    traveller.append(travellingMark);
     traveller.setAttribute('aria-hidden', 'true');
     traveller.dataset.el = 'home-logo-traveller';
     gsap.set(traveller, {
       position: 'fixed',
+      color: getComputedStyle(source).color,
       pointerEvents: 'none',
       maxWidth: 'none',
       margin: 0,

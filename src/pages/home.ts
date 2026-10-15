@@ -99,6 +99,7 @@ window.Webflow.push(() => {
       const nameRect = name.getBoundingClientRect();
       gsap.set(traveller, {
         clearProps: 'transform',
+        autoRound: false,
         left: origin.x,
         top: origin.y,
         width: origin.width,
@@ -106,10 +107,19 @@ window.Webflow.push(() => {
       });
       gsap.set(name, { x: end.x - nameRect.x });
       const first = Flip.getState([traveller, name]);
-      gsap.set(traveller, { left: end.x, top: end.y, width: end.width, height: end.height });
+      gsap.set(traveller, {
+        left: end.x,
+        top: end.y,
+        width: end.width,
+        height: end.height,
+        autoRound: false,
+      });
       gsap.set(name, { x: 0 });
       timeline = gsap.timeline({ paused: true, onUpdate: sync });
-      timeline.add(Flip.from(first, { duration: 1, scale: true, ease: 'none' }), 0);
+      timeline.add(
+        Flip.from(first, { duration: 1, scale: true, ease: 'none', autoRound: false }),
+        0
+      );
       timeline.fromTo(
         nav,
         { backgroundColor: 'transparent' },

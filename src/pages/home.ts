@@ -23,6 +23,8 @@ window.Webflow.push(() => {
     return;
   }
 
+  hero.dataset.logoScroll = 'loading';
+
   async function start(
     hero: HTMLElement,
     source: SVGSVGElement,
@@ -172,7 +174,8 @@ window.Webflow.push(() => {
     }
   }
 
-  start(hero, source, nav, name, mark).catch((error) =>
-    console.error('Home logo scroll could not initialise:', error)
-  );
+  start(hero, source, nav, name, mark).catch((error) => {
+    delete hero.dataset.logoScroll;
+    console.error('Home logo scroll could not initialise:', error);
+  });
 });

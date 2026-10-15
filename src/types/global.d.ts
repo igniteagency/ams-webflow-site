@@ -1,5 +1,6 @@
 import type { Webflow } from '@finsweet/ts-utils';
 import type GSAP from 'gsap';
+import type Flip from 'gsap/Flip';
 import type ScrollTrigger from 'gsap/ScrollTrigger';
 import type SplitText from 'gsap/SplitText';
 import type jQuery from 'jquery';
@@ -23,6 +24,7 @@ declare global {
 
   /** GSAP and sub-libs loading from Webflow CDN */
   gsap: GSAP;
+  Flip: typeof Flip;
   ScrollTrigger: typeof ScrollTrigger;
   SplitText: typeof SplitText;
   ScrollSmoother: typeof ScrollSmoother;

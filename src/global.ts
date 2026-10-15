@@ -33,6 +33,7 @@ function initComponents() {
 }
 
 function UIFunctions() {
+  window.conditionalLoadScript('[data-el="home-hero"]', 'pages/home.js');
   duplicateMarqueeList();
   initDetailsGroups();
   window.conditionalLoadScript(

@@ -120,16 +120,6 @@ window.Webflow.push(() => {
         Flip.from(first, { duration: 1, scale: true, ease: 'none', autoRound: false }),
         0
       );
-      timeline.fromTo(
-        nav,
-        { backgroundColor: 'transparent' },
-        {
-          backgroundColor: getComputedStyle(hero).getPropertyValue('--_theme---background').trim(),
-          duration: 0.55,
-          ease: 'none',
-        },
-        0.08
-      );
       const distance = Math.round(innerHeight * SCROLL_DISTANCE);
       if (reduced.matches) {
         trigger = ScrollTrigger.create({

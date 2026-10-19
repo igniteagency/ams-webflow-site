@@ -30,6 +30,10 @@ window.Webflow?.push(() => {
 
 function initComponents() {
   new Dialog();
+  window.conditionalLoadScript(
+    '[data-video-controller="starter-native-v1"]',
+    'components/native-video.js'
+  );
 }
 
 function UIFunctions() {

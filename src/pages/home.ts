@@ -61,7 +61,7 @@ window.Webflow.push(() => {
       maxWidth: 'none',
       margin: 0,
       opacity: 0,
-      zIndex: Number(getComputedStyle(nav).zIndex) + 1,
+      zIndex: Number(getComputedStyle(nav).zIndex) - 1,
     });
     document.body.append(traveller);
 

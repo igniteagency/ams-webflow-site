@@ -134,8 +134,8 @@ window.Webflow.push(() => {
       if (navbar) {
         timeline.fromTo(
           navbar,
-          { backgroundColor: 'rgba(96,96,96,0)' },
-          { backgroundColor: 'rgba(96,96,96,0.7)', duration: 0.2, ease: 'none' },
+          { backgroundColor: 'rgba(255,255,255,0)', backdropFilter: 'blur(0px)' },
+          { backgroundColor: '#fff3', backdropFilter: 'blur(36.3px)', duration: 0.2, ease: 'none' },
           0.8
         );
       }

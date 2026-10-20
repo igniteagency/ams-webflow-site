@@ -175,7 +175,18 @@ test('controls mode removes browser controls and exposes the existing custom tog
   assert.equal(f.video.controls, false);
   assert.equal(f.video.paused, true);
   assert.equal(f.toggle.hidden, false);
-  assert.equal(f.video.style.objectFit, 'contain');
+  assert.equal(f.video.style.objectFit, undefined);
+});
+
+test('video fit remains owned by native Webflow styling in both modes', () => {
+  for (const mode of [false, true]) {
+    for (const fit of [undefined, 'cover', 'contain']) {
+      const f = fixture(mode);
+      if (fit) f.video.style.objectFit = fit;
+      initNativeVideo(f.root);
+      assert.equal(f.video.style.objectFit, fit);
+    }
+  }
 });
 
 test('reduced motion and save data keep poster until explicit play; background tabs pause', async () => {

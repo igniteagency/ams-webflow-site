@@ -36,7 +36,6 @@ export function initNativeVideo(root: HTMLElement) {
     video.removeAttribute('muted');
     video.removeAttribute('loop');
   }
-  video.style.objectFit = controlsMode ? 'contain' : 'cover';
   root.dataset.videoMode = controlsMode ? 'controls' : 'background';
   root.dataset.videoReady = 'true';
 

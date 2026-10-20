@@ -126,7 +126,62 @@ export function initNativeVideo(root: HTMLElement) {
   doc.addEventListener('fullscreenchange', syncFullscreen);
   syncFullscreen();
   sync();
-  if (controlsMode) return;
+  if (controlsMode) {
+    const view = doc.defaultView;
+    const hover = view?.matchMedia('(hover: hover) and (pointer: fine)');
+    const controls = find<HTMLElement>('controls');
+    if (!view || !hover || !controls) return;
+    let timer: number | undefined;
+    let over = root.matches(':hover');
+    const pointers = new Set<number>();
+    const reveal = () => {
+      view.clearTimeout(timer);
+      timer = undefined;
+      root.dataset.videoControlsHidden = 'false';
+    };
+    const canHide = () =>
+      hover.matches &&
+      !over &&
+      !root.contains(doc.activeElement) &&
+      !pointers.size &&
+      !video.paused &&
+      !video.ended &&
+      !video.error;
+    const update = () => {
+      reveal();
+      if (canHide())
+        timer = view.setTimeout(() => {
+          timer = undefined;
+          if (canHide()) root.dataset.videoControlsHidden = 'true';
+        }, 2000);
+    };
+    root.dataset.videoControlsReady = 'true';
+    root.addEventListener('pointerenter', () => {
+      over = true;
+      reveal();
+    });
+    root.addEventListener('pointerleave', () => {
+      over = false;
+      update();
+    });
+    root.addEventListener('focusin', reveal);
+    root.addEventListener('focusout', () => {
+      view.queueMicrotask(update);
+    });
+    controls.addEventListener('pointerdown', (event) => {
+      pointers.add(event.pointerId);
+      reveal();
+    });
+    const release = (event: PointerEvent) => {
+      if (pointers.delete(event.pointerId)) update();
+    };
+    doc.addEventListener('pointerup', release);
+    doc.addEventListener('pointercancel', release);
+    for (const event of ['play', 'pause', 'ended', 'error']) video.addEventListener(event, update);
+    hover.addEventListener('change', update);
+    update();
+    return;
+  }
   const view = doc.defaultView;
   const motion = view?.matchMedia('(prefers-reduced-motion: reduce)');
   const connection = (

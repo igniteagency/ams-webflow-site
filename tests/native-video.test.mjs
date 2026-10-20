@@ -102,6 +102,56 @@ function fixture(player = false, reduced = false) {
   };
 }
 
+test('mute icons follow media volume events without replacing button children', () => {
+  const f = fixture(true);
+  const up = { hidden: false },
+    off = { hidden: true };
+  f.elements['volume-up-icon'] = up;
+  f.elements['volume-off-icon'] = off;
+  Object.defineProperty(f.elements.mute, 'textContent', {
+    set() {
+      assert.fail('button children replaced');
+    },
+  });
+  initNativeVideo(f.root);
+  f.video.muted = true;
+  f.listeners.get('volumechange')();
+  assert.equal(up.hidden, true);
+  assert.equal(off.hidden, false);
+  assert.equal(f.elements.mute['aria-label'], 'Unmute video');
+  f.video.muted = false;
+  f.listeners.get('volumechange')();
+  assert.equal(up.hidden, false);
+  assert.equal(off.hidden, true);
+  f.video.volume = 0;
+  f.listeners.get('volumechange')();
+  assert.equal(off.hidden, false);
+});
+
+test('fullscreen icons follow fullscreenchange while preserving button children', () => {
+  const f = fixture(true);
+  const enter = { hidden: false },
+    exit = { hidden: true };
+  f.elements['fullscreen-icon'] = enter;
+  f.elements['fullscreen-exit-icon'] = exit;
+  Object.defineProperty(f.elements.fullscreen, 'textContent', {
+    set() {
+      assert.fail('button children replaced');
+    },
+  });
+  initNativeVideo(f.root);
+  f.document.fullscreenElement = f.root;
+  f.document.fullscreenchange();
+  assert.equal(enter.hidden, true);
+  assert.equal(exit.hidden, false);
+  assert.equal(f.elements.fullscreen['aria-label'], 'Exit fullscreen');
+  f.document.fullscreenElement = null;
+  f.document.fullscreenchange();
+  assert.equal(enter.hidden, false);
+  assert.equal(exit.hidden, true);
+  assert.equal(f.elements.fullscreen['aria-label'], 'Enter fullscreen');
+});
+
 test('mode visibility remains owned by authored Webflow conditionals', () => {
   for (const mode of [false, true]) {
     const f = fixture(mode);

@@ -62,6 +62,8 @@ export function initNativeVideo(root: HTMLElement) {
       const muted = video.muted || video.volume === 0;
       mute.setAttribute('aria-label', muted ? 'Unmute video' : 'Mute video');
       mute.setAttribute('aria-pressed', String(muted));
+      show(find<HTMLElement>('volume-up-icon'), !muted);
+      show(find<HTMLElement>('volume-off-icon'), muted);
     }
     if (volume) volume.value = String(video.muted ? 0 : video.volume);
   };
@@ -111,10 +113,10 @@ export function initNativeVideo(root: HTMLElement) {
     sync();
   });
   const syncFullscreen = () => {
-    fullscreen?.setAttribute(
-      'aria-label',
-      doc.fullscreenElement === root ? 'Exit fullscreen' : 'Enter fullscreen'
-    );
+    const active = doc.fullscreenElement === root;
+    fullscreen?.setAttribute('aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen');
+    show(find<HTMLElement>('fullscreen-icon'), !active);
+    show(find<HTMLElement>('fullscreen-exit-icon'), active);
   };
   if (fullscreen) fullscreen.disabled = !doc.fullscreenEnabled || !root.requestFullscreen;
   fullscreen?.addEventListener('click', () => {

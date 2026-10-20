@@ -36,9 +36,10 @@ window.Webflow.push(() => {
     await document.fonts.ready;
     gsap.registerPlugin(Flip, ScrollTrigger);
 
+    const navbar = nav.querySelector('[data-el="navbar-bar"]');
     const reduced = matchMedia('(prefers-reduced-motion: reduce)');
     const originals = new Map(
-      [source, nav, name, mark].map((element) => [element, element.getAttribute('style')])
+      [source, nav, name, mark, ...(navbar ? [navbar] : [])].map((element) => [element, element.getAttribute('style')])
     );
     const restore = (element: HTMLElement | SVGSVGElement) => {
       const style = originals.get(element);
@@ -97,6 +98,10 @@ window.Webflow.push(() => {
       timeline?.kill();
       restore(source);
       restore(name);
+      if (navbar) {
+        restore(navbar);
+        gsap.set(navbar, { transitionProperty: 'color' });
+      }
       gsap.set(nav, { position: 'fixed' });
       const rect = source.getBoundingClientRect();
       origin = new DOMRect(rect.x, rect.y + scrollY, rect.width, rect.height);
@@ -126,6 +131,14 @@ window.Webflow.push(() => {
         Flip.from(first, { duration: 1, scale: true, ease: 'none', autoRound: false }),
         0
       );
+      if (navbar) {
+        timeline.fromTo(
+          navbar,
+          { backgroundColor: 'rgba(96,96,96,0)' },
+          { backgroundColor: 'rgba(96,96,96,0.7)', duration: 0.2, ease: 'none' },
+          0.8
+        );
+      }
       const distance = Math.round(innerHeight * SCROLL_DISTANCE);
       if (reduced.matches) {
         trigger = ScrollTrigger.create({

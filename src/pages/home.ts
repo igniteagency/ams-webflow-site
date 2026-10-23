@@ -1,3 +1,5 @@
+import { homeLogoMaskRect } from '../utils/home-logo-mask';
+
 const HOME_PAGE_ID = '6ac58464423a10a23dfeb5a0';
 const FLIP_URL = 'https://cdn.prod.website-files.com/gsap/3.15.0/Flip.min.js';
 const SCROLL_DISTANCE = 0.7;
@@ -46,6 +48,16 @@ window.Webflow.push(() => {
       if (style == null) element.removeAttribute('style');
       else element.setAttribute('style', style);
     };
+    const artwork = source.closest<HTMLElement>('[data-el="home-hero-logo"]')!;
+    const maskLayer = document.createElement('div');
+    maskLayer.dataset.el = 'home-logo-mask';
+    maskLayer.setAttribute('aria-hidden', 'true');
+    gsap.set(maskLayer, {
+      position: 'fixed',
+      inset: 0,
+      pointerEvents: 'none',
+      zIndex: Number(getComputedStyle(nav).zIndex) - 1,
+    });
     const traveller = document.createElement('div');
     const travellingMark = source.cloneNode(true) as SVGSVGElement;
     for (const attribute of ['id', 'class', 'style', 'data-w-id', 'data-flip-id']) {
@@ -56,7 +68,7 @@ window.Webflow.push(() => {
     traveller.setAttribute('aria-hidden', 'true');
     traveller.dataset.el = 'home-logo-traveller';
     gsap.set(traveller, {
-      position: 'fixed',
+      position: 'absolute',
       color: getComputedStyle(source).color,
       pointerEvents: 'none',
       maxWidth: 'none',
@@ -64,7 +76,8 @@ window.Webflow.push(() => {
       opacity: 0,
       zIndex: Number(getComputedStyle(nav).zIndex) - 1,
     });
-    document.body.append(traveller);
+    maskLayer.append(traveller);
+    document.body.append(maskLayer);
 
     let timeline: gsap.core.Timeline | undefined;
     let trigger: ScrollTrigger | undefined;
@@ -74,6 +87,10 @@ window.Webflow.push(() => {
 
     function sync() {
       if (!timeline) return;
+      // The mask follows the scene, independently of the logo's Flip transform.
+      const mask = homeLogoMaskRect(artwork.getBoundingClientRect());
+      maskLayer.style.setProperty('--home-mask-size', `${mask.width}px ${mask.height}px`);
+      maskLayer.style.setProperty('--home-mask-position', `${mask.left}px ${mask.top}px`);
       const progress = timeline.progress();
       const lift = Math.min(1, progress / LIFT_DISTANCE);
       traveller.style.opacity = String(progress === 1 ? 0 : lift);
@@ -168,7 +185,7 @@ window.Webflow.push(() => {
       cancelAnimationFrame(frame);
       trigger?.kill();
       timeline?.kill();
-      traveller.remove();
+      maskLayer.remove();
       originals.forEach((_, element) => restore(element));
       delete hero.dataset.logoScroll;
       removeEventListener('resize', scheduleBuild);

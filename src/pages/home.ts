@@ -42,11 +42,12 @@ window.Webflow.push(() => {
     gsap.registerPlugin(Flip, ScrollTrigger);
 
     const navbar = nav.querySelector('.navbar_component');
+    const navContainer = nav.querySelector('.navbar_container');
     const artwork = source.closest<HTMLElement>('.ams-hero_artwork')!;
     const maskImage = getComputedStyle(artwork).getPropertyValue('--home-bridge-mask');
     const reduced = matchMedia('(prefers-reduced-motion: reduce)');
     const originals = new Map(
-      [source, artwork, nav, name, mark, ...(navbar ? [navbar] : [])].map((element) => [element, element.getAttribute('style')])
+      [source, artwork, nav, name, mark, ...(navbar ? [navbar] : []), ...(navContainer ? [navContainer] : [])].map((element) => [element, element.getAttribute('style')])
     );
     const restore = (element: HTMLElement | SVGSVGElement) => {
       const style = originals.get(element);
@@ -60,7 +61,7 @@ window.Webflow.push(() => {
       position: 'fixed',
       inset: 0,
       pointerEvents: 'none',
-      zIndex: Number(getComputedStyle(nav).zIndex) - 1,
+      zIndex: Number(getComputedStyle(nav).zIndex) + 1,
     });
     const traveller = document.createElement('div');
     const travellingMark = source.cloneNode(true) as SVGSVGElement;
@@ -77,7 +78,6 @@ window.Webflow.push(() => {
       maxWidth: 'none',
       margin: 0,
       opacity: 0,
-      zIndex: Number(getComputedStyle(nav).zIndex) - 1,
     });
     maskLayer.append(traveller);
     document.body.append(maskLayer);
@@ -125,6 +125,14 @@ window.Webflow.push(() => {
         restore(navbar);
         gsap.set(navbar, { transitionProperty: 'color' });
       }
+      if (navContainer) {
+        restore(navContainer);
+        const borderColor = getComputedStyle(navContainer).borderBottomColor;
+        gsap.set(navContainer, {
+          '--home-nav-border-opacity': 1,
+          borderBottomColor: `color-mix(in srgb, ${borderColor} calc(var(--home-nav-border-opacity) * 100%), transparent)`,
+        });
+      }
       gsap.set(nav, { position: 'fixed' });
       const rect = source.getBoundingClientRect();
       origin = new DOMRect(rect.x, rect.y + scrollY, rect.width, rect.height);
@@ -159,6 +167,13 @@ window.Webflow.push(() => {
           navbar,
           { backgroundColor: 'rgba(128,128,128,0)', backdropFilter: 'blur(0px)' },
           { backgroundColor: 'rgba(128,128,128,0.5)', backdropFilter: 'blur(36.3px)', duration: 0.2, ease: 'none' },
+          0.8
+        );
+      }
+      if (navContainer) {
+        timeline.to(
+          navContainer,
+          { '--home-nav-border-opacity': 0, duration: 0.2, ease: 'none' },
           0.8
         );
       }

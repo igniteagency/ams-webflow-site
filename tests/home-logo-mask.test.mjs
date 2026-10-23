@@ -46,3 +46,15 @@ test('feather remains one CSS pixel at every cover scale', () => {
   }
   assert.equal(homeLogoMaskImage(image, 0), image);
 });
+
+test('readable SVG respects the edited feather value, including a sharp edge', () => {
+  for (const feather of [0, 0.5, 1, 2]) {
+    const image = `url("data:image/svg+xml,<svg><feGaussianBlur in='SourceAlpha' stdDeviation='${feather}'/></svg>")`;
+    for (const [width, height] of [[1920, 1080], [1440, 900], [820, 1180], [667, 375], [393, 852]]) {
+      const mask = homeLogoMaskRect({ left: 0, top: 0, width, height });
+      const result = homeLogoMaskImage(image, mask.width);
+      const deviation = Number(result.match(/stdDeviation='([^']+)'/)[1]);
+      assert.ok(Math.abs(deviation * mask.width / 1920 - feather) < 1e-10);
+    }
+  }
+});

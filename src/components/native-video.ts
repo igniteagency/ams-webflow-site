@@ -45,30 +45,40 @@ export function initNativeVideo(root: HTMLElement) {
     target.addEventListener?.(name, callback as EventListener);
     disposers.push(() => target.removeEventListener?.(name, callback as EventListener));
   };
-  const originalSrc = video.getAttribute('src');
-  const authoredSource = video.getAttribute('src')
+  const sources = Array.from(video.querySelectorAll<HTMLSourceElement>('source'));
+  for (const element of [video, ...sources]) {
+    const src = element.getAttribute('data-video-src') || element.getAttribute('src');
+    if (src) element.setAttribute('data-video-src', src);
+    element.removeAttribute('src');
+  }
+  const authoredSource = video.getAttribute('data-video-src')
     ? video
-    : Array.from(video.querySelectorAll<HTMLSourceElement>('source[src]')).find((source) => {
+    : sources.find((source) => {
+        if (!source.getAttribute('data-video-src')) return false;
         const type = source.getAttribute('type') || '';
         return (
           !type ||
           HLS_TYPE.test(type) ||
-          HLS_URL.test(source.getAttribute('src') || '') ||
+          HLS_URL.test(source.getAttribute('data-video-src') || '') ||
           video.canPlayType(type)
         );
       });
-  const source = authoredSource?.getAttribute('src') || '';
+  const source = authoredSource?.getAttribute('data-video-src') || '';
   const isHls = HLS_URL.test(source) || HLS_TYPE.test(authoredSource?.getAttribute('type') || '');
-  const useHls = isHls && !video.canPlayType('application/vnd.apple.mpegurl');
+  const useHls = isHls && Hls.isSupported();
   let hls: Hls | undefined;
+  let hlsLoadPending = false;
+  let attached = false;
   let failed = false;
   let networkRecoveries = 0;
   let mediaRecoveries = 0;
   let nativeRetry = false;
   let nativeRecoveries = 0;
   let playRequested = false;
+  let playAttempt = 0;
   const pause = () => {
     playRequested = false;
+    playAttempt++;
     video.pause();
   };
 
@@ -79,9 +89,9 @@ export function initNativeVideo(root: HTMLElement) {
     hls?.destroy();
     hls = undefined;
     pause();
-    if (useHls) {
-      if (originalSrc === null) video.removeAttribute('src');
-      else video.setAttribute('src', originalSrc);
+    if (attached) {
+      video.removeAttribute('src');
+      video.load();
     }
     delete root.dataset.videoReady;
     delete root.dataset.videoControlsReady;
@@ -167,13 +177,17 @@ export function initNativeVideo(root: HTMLElement) {
       video.load();
     }
     if (disposed || failed) return;
+    if (isHls && !useHls && !video.canPlayType('application/vnd.apple.mpegurl')) {
+      fail('HLS video is not supported in this browser.');
+      return;
+    }
     message('');
     playRequested = true;
+    if (!useHls && source && !attached) {
+      video.setAttribute('src', source);
+      attached = true;
+    }
     if (useHls && !hls) {
-      if (!Hls.isSupported()) {
-        fail('HLS video is not supported in this browser.');
-        return;
-      }
       try {
         hls = new Hls({ autoStartLoad: false });
         const instance = hls;
@@ -181,7 +195,7 @@ export function initNativeVideo(root: HTMLElement) {
           if (!disposed && !failed && playRequested) void play();
         });
         instance.on(Hls.Events.ERROR, (_, data) => {
-          if (!data.fatal || failed) return;
+          if (!data.fatal || failed || disposed) return;
           const code = data.response?.code || 0;
           if (
             data.type === Hls.ErrorTypes.NETWORK_ERROR &&
@@ -196,6 +210,7 @@ export function initNativeVideo(root: HTMLElement) {
           else fail();
         });
         instance.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (disposed || failed) return;
           if (
             view?.matchMedia('(min-width: 1024px) and (hover: hover) and (pointer: fine)')
               .matches &&
@@ -213,18 +228,25 @@ export function initNativeVideo(root: HTMLElement) {
             });
             instance.startLevel = preferred;
           }
-          instance.startLoad();
+          hlsLoadPending = !playRequested;
+          if (playRequested) instance.startLoad();
         });
         hls.loadSource(source);
         hls.attachMedia(video);
+        attached = true;
       } catch (error) {
         console.error('Video HLS setup failed.', error);
         fail();
         return;
       }
     }
+    if (hlsLoadPending) {
+      hlsLoadPending = false;
+      hls?.startLoad();
+    }
+    const attempt = ++playAttempt;
     return video.play().catch((error) => {
-      if (disposed || failed || error?.name === 'AbortError') return;
+      if (disposed || failed || attempt !== playAttempt || error?.name === 'AbortError') return;
       message('Playback could not start. Press Play to try again.');
       sync();
     });
@@ -355,7 +377,7 @@ export function initNativeVideo(root: HTMLElement) {
     update();
     return cleanup;
   }
-  let inView = !view?.IntersectionObserver;
+  let inView = false;
   const updatePlayback = () => {
     if (disposed) return;
     const allowed =
@@ -363,7 +385,6 @@ export function initNativeVideo(root: HTMLElement) {
       !doc.hidden &&
       !userPaused &&
       (userStarted || (!motion?.matches && !connection?.saveData));
-    video.autoplay = allowed;
     if (allowed) void play();
     else pause();
   };

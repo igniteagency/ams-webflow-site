@@ -11,7 +11,7 @@ const compiled = await build({
 });
 const context = vm.createContext({ module: { exports: {} } });
 vm.runInContext(compiled.outputFiles[0].text, context);
-const { homeLogoMaskRect } = context.module.exports;
+const { homeLogoMaskImage, homeLogoMaskRect } = context.module.exports;
 
 test('bridge stays registered to the video cover crop at desktop and mobile sizes', () => {
   for (const [width, height] of [[1920, 1080], [1440, 900], [820, 1180], [667, 375], [393, 852]]) {
@@ -34,4 +34,15 @@ test('scroll moves the bridge cutout with the scene, independently of logo scale
     assert.equal(rect.width, initial.width);
     assert.equal(rect.height, initial.height);
   }
+});
+
+test('feather remains one CSS pixel at every cover scale', () => {
+  const image = 'url("data:image/svg+xml,%3CfeGaussianBlur%20stdDeviation%3D%221%22%2F%3E")';
+  for (const [width, height] of [[1920, 1080], [1440, 900], [820, 1180], [667, 375], [393, 852]]) {
+    const mask = homeLogoMaskRect({ left: 0, top: 0, width, height });
+    const svg = decodeURIComponent(homeLogoMaskImage(image, mask.width));
+    const deviation = Number(svg.match(/stdDeviation="([^"]+)"/)[1]);
+    assert.ok(Math.abs(deviation * mask.width / 1920 - 1) < 1e-10);
+  }
+  assert.equal(homeLogoMaskImage(image, 0), image);
 });

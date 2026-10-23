@@ -1,34 +1,37 @@
-import { homeLogoMaskRect } from '../utils/home-logo-mask';
+import { homeLogoMaskImage, homeLogoMaskRect } from '../utils/home-logo-mask';
 
 const HOME_PAGE_ID = '6ac58464423a10a23dfeb5a0';
 const FLIP_URL = 'https://cdn.prod.website-files.com/gsap/3.15.0/Flip.min.js';
 const SCROLL_DISTANCE = 0.7;
 const LIFT_DISTANCE = 0.16;
+const INITIALIZED = Symbol.for('ams.homeLogoScroll');
+type HomeHero = HTMLElement & { [INITIALIZED]?: boolean };
 
 window.Webflow = window.Webflow || [];
 window.Webflow.push(() => {
   if (document.documentElement.dataset.wfPage !== HOME_PAGE_ID) return;
 
-  const hero = document.querySelector('[data-el="home-hero"]');
-  const source = hero?.querySelector<SVGSVGElement>('[data-el="home-hero-logo"] svg');
-  const nav = document.querySelector('[data-el="navbar"]');
-  const brand = nav?.querySelector('[data-el="navbar-brand"]');
+  const artwork = document.querySelector('.ams-hero_artwork');
+  const hero = artwork?.closest<HomeHero>('.section_hero-header');
+  const source = artwork?.querySelector<SVGSVGElement>('.logo_component svg');
+  const nav = document.querySelector('.navbar-wrapper');
+  const brand = nav?.querySelector('.navbar_logo-link');
   const link = brand?.querySelector('a');
   const name = brand?.querySelector('p');
   const mark = link?.querySelector('svg');
   if (!hero || !source || !nav || !brand || !link || !name || !mark) return;
   if (
-    hero.dataset.logoScroll ||
+    hero[INITIALIZED] ||
     typeof gsap === 'undefined' ||
     typeof ScrollTrigger === 'undefined'
   ) {
     return;
   }
 
-  hero.dataset.logoScroll = 'loading';
+  hero[INITIALIZED] = true;
 
   async function start(
-    hero: HTMLElement,
+    hero: HomeHero,
     source: SVGSVGElement,
     nav: HTMLElement,
     name: HTMLElement,
@@ -38,19 +41,20 @@ window.Webflow.push(() => {
     await document.fonts.ready;
     gsap.registerPlugin(Flip, ScrollTrigger);
 
-    const navbar = nav.querySelector('[data-el="navbar-bar"]');
+    const navbar = nav.querySelector('.navbar_component');
+    const artwork = source.closest<HTMLElement>('.ams-hero_artwork')!;
+    const maskImage = getComputedStyle(artwork).getPropertyValue('--home-bridge-mask');
     const reduced = matchMedia('(prefers-reduced-motion: reduce)');
     const originals = new Map(
-      [source, nav, name, mark, ...(navbar ? [navbar] : [])].map((element) => [element, element.getAttribute('style')])
+      [source, artwork, nav, name, mark, ...(navbar ? [navbar] : [])].map((element) => [element, element.getAttribute('style')])
     );
     const restore = (element: HTMLElement | SVGSVGElement) => {
       const style = originals.get(element);
       if (style == null) element.removeAttribute('style');
       else element.setAttribute('style', style);
     };
-    const artwork = source.closest<HTMLElement>('[data-el="home-hero-logo"]')!;
     const maskLayer = document.createElement('div');
-    maskLayer.dataset.el = 'home-logo-mask';
+    maskLayer.className = 'ams-hero_logo-mask';
     maskLayer.setAttribute('aria-hidden', 'true');
     gsap.set(maskLayer, {
       position: 'fixed',
@@ -65,8 +69,7 @@ window.Webflow.push(() => {
     }
     gsap.set(travellingMark, { display: 'block', width: '100%', height: '100%' });
     traveller.append(travellingMark);
-    traveller.setAttribute('aria-hidden', 'true');
-    traveller.dataset.el = 'home-logo-traveller';
+    traveller.className = 'ams-hero_logo-traveller';
     gsap.set(traveller, {
       position: 'absolute',
       color: getComputedStyle(source).color,
@@ -95,7 +98,6 @@ window.Webflow.push(() => {
       const lift = Math.min(1, progress / LIFT_DISTANCE);
       traveller.style.opacity = String(progress === 1 ? 0 : lift);
       mark.style.opacity = progress === 1 ? '1' : '0';
-      hero.dataset.logoScroll = progress === 0 ? 'hero' : progress === 1 ? 'nav' : 'moving';
       if (progress === 0) {
         restore(source);
       } else if (lift === 1) {
@@ -115,6 +117,10 @@ window.Webflow.push(() => {
       timeline?.kill();
       restore(source);
       restore(name);
+      const mask = homeLogoMaskRect(artwork.getBoundingClientRect());
+      const featheredMask = homeLogoMaskImage(maskImage, mask.width);
+      artwork.style.setProperty('--home-bridge-mask', featheredMask);
+      maskLayer.style.setProperty('--home-bridge-mask', featheredMask);
       if (navbar) {
         restore(navbar);
         gsap.set(navbar, { transitionProperty: 'color' });
@@ -187,7 +193,7 @@ window.Webflow.push(() => {
       timeline?.kill();
       maskLayer.remove();
       originals.forEach((_, element) => restore(element));
-      delete hero.dataset.logoScroll;
+      delete hero[INITIALIZED];
       removeEventListener('resize', scheduleBuild);
       removeEventListener('pageshow', scheduleBuild);
       reduced.removeEventListener('change', scheduleBuild);
@@ -205,7 +211,7 @@ window.Webflow.push(() => {
   }
 
   start(hero, source, nav, name, mark).catch((error) => {
-    delete hero.dataset.logoScroll;
+    delete hero[INITIALIZED];
     console.error('Home logo scroll could not initialise:', error);
   });
 });

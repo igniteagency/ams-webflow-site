@@ -15,3 +15,12 @@ export function homeLogoMaskRect(rect: {
     top: rect.top + (rect.height - height) / 2,
   };
 }
+
+// Keep the feather at one CSS pixel when the 1920px SVG is scaled to cover.
+export function homeLogoMaskImage(image: string, renderedWidth: number) {
+  if (renderedWidth <= 0) return image;
+  return image.replace(
+    /stdDeviation%3D%22[\d.]+%22/i,
+    `stdDeviation%3D%22${1920 / renderedWidth}%22`
+  );
+}

@@ -1,12 +1,73 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { mock } from 'node:test';
 
-import { initNativeVideo } from '../src/components/native-video.ts';
+class MockHls {
+  static instances = [];
+  static supported = true;
+  static isSupported() {
+    return this.supported;
+  }
+  static Events = { MANIFEST_PARSED: 'manifest', MEDIA_ATTACHED: 'attached', ERROR: 'error' };
+  static ErrorTypes = { NETWORK_ERROR: 'networkError', MEDIA_ERROR: 'mediaError' };
+  constructor(config) {
+    if (MockHls.throwOnCreate) throw new Error('MSE unavailable');
+    this.config = config;
+    this.events = new Map();
+    this.levels = [];
+    this.startLevel = -1;
+    this.currentLevel = -1;
+    this.starts = 0;
+    this.recoveries = 0;
+    this.destroyed = 0;
+    MockHls.instances.push(this);
+  }
+  on(name, fn) {
+    this.events.set(name, fn);
+  }
+  emit(name, data) {
+    this.events.get(name)?.(name, data);
+  }
+  loadSource(source) {
+    this.source = source;
+    this.loads = (this.loads || 0) + 1;
+  }
+  attachMedia(video) {
+    this.video = video;
+  }
+  startLoad() {
+    this.starts++;
+  }
+  recoverMediaError() {
+    this.recoveries++;
+  }
+  destroy() {
+    this.destroyed++;
+  }
+}
+mock.module('hls.js', { exports: { default: MockHls } });
+const { initNativeVideo } = await import('../src/components/native-video.ts');
 
 function fixture(player = false, reduced = false) {
   const listeners = new Map();
   const video = {
     dataset: { videoPlayer: String(player) },
+    attributes: { src: 'movie.mp4', poster: 'poster.jpg' },
+    sources: [],
+    getAttribute(name) {
+      return this.attributes[name] ?? null;
+    },
+    setAttribute(name, value) {
+      this.attributes[name] = value;
+    },
+    querySelectorAll() {
+      return this.sources;
+    },
+    canPlayType() {
+      return '';
+    },
+    load() {
+      this.loads = (this.loads || 0) + 1;
+    },
     style: {},
     paused: true,
     controls: true,
@@ -70,6 +131,9 @@ function fixture(player = false, reduced = false) {
         observer.change = callback;
       }
       observe() {}
+      disconnect() {
+        observer.disconnected = true;
+      }
     },
   };
   const document = {
@@ -105,6 +169,25 @@ function fixture(player = false, reduced = false) {
       return elements[selector.match(/="([^"]+)"/)[1]];
     },
   };
+  for (const target of [
+    root,
+    document,
+    view,
+    view.navigator.connection,
+    ...Object.values(elements),
+  ]) {
+    const events = new Map();
+    target.addEventListener = (name, fn) => {
+      if (!events.has(name)) events.set(name, new Set());
+      events.get(name).add(fn);
+      const dispatch = (...args) => {
+        for (const listener of events.get(name)) listener(...args);
+      };
+      if (target === video) listeners.set(name, dispatch);
+      else target[name] = dispatch;
+    };
+    target.removeEventListener = (name, fn) => events.get(name)?.delete(fn);
+  }
   return {
     root,
     video,
@@ -343,4 +426,335 @@ test('background autoplays only in view and exposes a working persistent pause c
   f.observer.change([{ isIntersecting: false }]);
   f.observer.change([{ isIntersecting: true }]);
   assert.equal(f.video.paused, true);
+});
+
+test('HLS attaches once on demand and retains one instance across loop and viewport resumes', () => {
+  const f = fixture();
+  f.video.attributes.src = 'https://example.test/movie.M3U8?token=1#video';
+  const count = MockHls.instances.length;
+  initNativeVideo(f.root);
+  assert.equal(MockHls.instances.length, count, 'offscreen background must not fetch');
+  f.observer.change([{ isIntersecting: true }]);
+  assert.equal(MockHls.instances.length, count + 1);
+  const hls = MockHls.instances.at(-1);
+  assert.equal(hls.source, f.video.attributes.src);
+  assert.equal(hls.video, f.video);
+  f.listeners.get('ended')();
+  f.observer.change([{ isIntersecting: false }]);
+  f.observer.change([{ isIntersecting: true }]);
+  initNativeVideo(f.root);
+  assert.equal(MockHls.instances.length, count + 1);
+  assert.equal(hls.destroyed, 0);
+  assert.equal(f.video.attributes.poster, 'poster.jpg');
+});
+
+test('native HLS takes priority over hls.js and preserves authored sources and poster', () => {
+  const f = fixture(true);
+  f.video.attributes.src = 'movie.m3u8';
+  f.video.canPlayType = (type) => (type === 'application/vnd.apple.mpegurl' ? 'maybe' : '');
+  const count = MockHls.instances.length;
+  initNativeVideo(f.root);
+  f.toggle.click();
+  assert.equal(MockHls.instances.length, count);
+  assert.equal(f.video.paused, false);
+  assert.deepEqual(f.video.attributes, { src: 'movie.m3u8', poster: 'poster.jpg' });
+});
+
+function childSource(src, type = '') {
+  return { getAttribute: (name) => ({ src, type })[name] ?? null };
+}
+
+test('child sources detect HLS by extension or MIME while respecting playable source order and video src', () => {
+  for (const [src, type] of [
+    ['movie.m3u8?token=1', ''],
+    ['/stream?id=1', 'application/x-mpegURL'],
+    ['/stream?id=2', 'application/vnd.apple.mpegurl; codecs="avc1"'],
+  ]) {
+    const f = fixture(true);
+    delete f.video.attributes.src;
+    f.video.sources = [childSource('skip.webm', 'video/webm'), childSource(src, type)];
+    initNativeVideo(f.root);
+    f.toggle.click();
+    assert.equal(MockHls.instances.at(-1).source, src);
+    assert.equal(f.video.sources.length, 2);
+    assert.equal(f.video.attributes.poster, 'poster.jpg');
+  }
+  for (const direct of [true, false]) {
+    const f = fixture(true);
+    if (!direct) delete f.video.attributes.src;
+    f.video.sources = [childSource('first.mp4', 'video/mp4'), childSource('other.m3u8')];
+    f.video.canPlayType = (type) => (type === 'video/mp4' ? 'probably' : '');
+    const count = MockHls.instances.length;
+    initNativeVideo(f.root);
+    f.toggle.click();
+    assert.equal(MockHls.instances.length, count, 'MP4 authoring takes precedence');
+  }
+});
+
+test('unsupported HLS reports a persistent error without playing or creating a controller', () => {
+  const f = fixture();
+  f.video.attributes.src = 'movie.m3u8';
+  const count = MockHls.instances.length;
+  MockHls.supported = false;
+  try {
+    initNativeVideo(f.root);
+    f.observer.change([{ isIntersecting: true }]);
+    assert.equal(f.root.dataset.videoState, 'error');
+    assert.match(f.elements.status.textContent, /not supported/i);
+    f.toggle.click();
+    f.listeners.get('timeupdate')();
+    assert.equal(f.root.dataset.videoState, 'error');
+    assert.equal(f.video.paused, true);
+    assert.equal(MockHls.instances.length, count);
+  } finally {
+    MockHls.supported = true;
+  }
+});
+
+test('desktop prefers up to 1080 at startup only, with automatic quality on constrained devices', () => {
+  for (const [heights, desktop, saveData, reduced, expected] of [
+    [[360, 720, 1080, 2160], true, false, false, 2],
+    [[360, 720], true, false, false, 1],
+    [[1440, 2160], true, false, false, -1],
+    [[360, 1080], false, false, false, -1],
+    [[360, 1080], true, true, false, -1],
+    [[360, 1080], true, false, true, -1],
+  ]) {
+    const f = fixture(true);
+    f.video.attributes.src = 'movie.m3u8';
+    f.view.matchMedia = (query) => ({
+      matches: query.includes('reduced-motion') ? reduced : desktop,
+      addEventListener() {},
+    });
+    f.view.navigator.connection.saveData = saveData;
+    initNativeVideo(f.root);
+    f.toggle.click();
+    const hls = MockHls.instances.at(-1);
+    hls.levels = heights.map((height) => ({ height }));
+    hls.emit(MockHls.Events.MANIFEST_PARSED, {});
+    assert.equal(hls.startLevel, expected);
+    assert.equal(hls.starts, 1);
+    assert.equal(hls.config.autoStartLoad, false, 'choose before first fragment loads');
+    assert.equal(hls.currentLevel, -1, 'ABR must remain enabled');
+    assert.equal(hls.config.minAutoBitrate, undefined, 'no hard bitrate floor');
+  }
+});
+
+test('fatal HLS recovery is bounded per instance; nonfatal errors remain with ABR', () => {
+  for (const type of ['networkError', 'mediaError', 'otherError']) {
+    const f = fixture(true);
+    f.video.attributes.src = 'movie.m3u8';
+    initNativeVideo(f.root);
+    f.toggle.click();
+    const hls = MockHls.instances.at(-1);
+    hls.emit('error', { fatal: false, type });
+    assert.equal(hls.starts + hls.recoveries + hls.destroyed, 0);
+    hls.emit('error', { fatal: true, type });
+    assert.equal(hls.starts, type === 'networkError' ? 1 : 0);
+    assert.equal(hls.recoveries, type === 'mediaError' ? 1 : 0);
+    hls.emit('error', { fatal: true, type });
+    assert.equal(hls.destroyed, 1);
+    assert.equal(f.root.dataset.videoState, 'error');
+    assert.equal(f.video.paused, true);
+    assert.match(f.elements.status.textContent, /could not load/);
+    const count = MockHls.instances.length;
+    f.toggle.click();
+    f.listeners.get('timeupdate')();
+    hls.emit('error', { fatal: true, type });
+    assert.equal(MockHls.instances.length, count);
+    assert.equal(hls.destroyed, 1);
+    assert.equal(f.root.dataset.videoState, 'error');
+  }
+});
+
+test('native HLS retries network/decode errors only once on explicit Play and reports terminal errors', () => {
+  for (const code of [2, 3, 4]) {
+    const f = fixture();
+    f.video.attributes.src = 'movie.m3u8';
+    f.video.canPlayType = () => 'probably';
+    f.video.load = () => {
+      f.video.loads = (f.video.loads || 0) + 1;
+      f.video.error = null;
+    };
+    initNativeVideo(f.root);
+    f.observer.change([{ isIntersecting: true }]);
+    f.video.error = { code };
+    f.listeners.get('error')();
+    assert.equal(f.video.paused, true);
+    f.observer.change([{ isIntersecting: true }]);
+    assert.equal(f.video.paused, true, 'viewport changes must not retry native errors');
+    f.toggle.click();
+    assert.equal(f.video.loads || 0, code === 4 ? 0 : 1);
+    if (code !== 4) {
+      assert.equal(f.video.paused, false);
+      f.video.error = { code };
+      f.listeners.get('error')();
+    }
+    f.toggle.click();
+    assert.equal(f.video.loads || 0, code === 4 ? 0 : 1);
+    assert.equal(f.root.dataset.videoState, 'error');
+    assert.equal(f.video.paused, true);
+  }
+});
+
+test('cleanup releases HLS, observers and listeners, restores source authoring and allows reinit', () => {
+  const f = fixture();
+  f.video.attributes.src = 'movie.m3u8';
+  const cleanup = initNativeVideo(f.root);
+  f.observer.change([{ isIntersecting: true }]);
+  const hls = MockHls.instances.at(-1);
+  f.video.attributes.src = 'blob:media-source';
+  assert.equal(typeof cleanup, 'function');
+  cleanup();
+  cleanup();
+  assert.equal(hls.destroyed, 1);
+  assert.equal(f.observer.disconnected, true);
+  assert.equal(f.video.paused, true);
+  assert.equal(f.root.dataset.videoReady, undefined);
+  assert.equal(f.video.attributes.src, 'movie.m3u8');
+  const count = MockHls.instances.length;
+  f.toggle.click();
+  f.document.visibilitychange();
+  f.observer.change([{ isIntersecting: true }]);
+  assert.equal(MockHls.instances.length, count);
+  initNativeVideo(f.root);
+  f.observer.change([{ isIntersecting: true }]);
+  assert.equal(MockHls.instances.length, count + 1);
+});
+
+test('automatic cleanup runs on DOM removal or non-persisted pagehide, preserving bfcache instances', () => {
+  for (const removal of [true, false]) {
+    const f = fixture(true);
+    f.root.isConnected = true;
+    f.video.attributes.src = 'movie.m3u8';
+    let checkRemoval;
+    let disconnected = false;
+    f.view.MutationObserver = class {
+      constructor(callback) {
+        checkRemoval = callback;
+      }
+      observe() {}
+      disconnect() {
+        disconnected = true;
+      }
+    };
+    initNativeVideo(f.root);
+    f.toggle.click();
+    const hls = MockHls.instances.at(-1);
+    assert.equal(typeof f.view.pagehide, 'function');
+    f.view.pagehide({ persisted: true });
+    assert.equal(hls.destroyed, 0);
+    if (removal) {
+      f.root.isConnected = false;
+      checkRemoval();
+    } else f.view.pagehide({ persisted: false });
+    assert.equal(hls.destroyed, 1);
+    assert.equal(disconnected, true);
+  }
+});
+
+test('manifest recovery reloads the manifest once; permanent HTTP failures stop immediately', () => {
+  for (const code of [0, 503, 404]) {
+    const f = fixture(true);
+    f.video.attributes.src = 'movie.m3u8';
+    initNativeVideo(f.root);
+    f.toggle.click();
+    const hls = MockHls.instances.at(-1);
+    const error = {
+      fatal: true,
+      type: 'networkError',
+      details: 'manifestLoadError',
+      response: { code },
+    };
+    hls.emit('error', error);
+    assert.equal(hls.loads, code === 404 ? 1 : 2);
+    assert.equal(hls.starts, 0, 'startLoad cannot reload a failed master manifest');
+    hls.emit('error', error);
+    assert.equal(hls.destroyed, 1);
+  }
+});
+
+test('HLS setup failures become visible errors instead of escaping the control handler', (t) => {
+  const errorLog = t.mock.method(console, 'error', () => {});
+  const f = fixture(true);
+  f.video.attributes.src = 'movie.m3u8';
+  initNativeVideo(f.root);
+  MockHls.throwOnCreate = true;
+  try {
+    assert.doesNotThrow(() => f.toggle.click());
+    assert.equal(errorLog.mock.callCount(), 1);
+    assert.equal(f.root.dataset.videoState, 'error');
+    assert.equal(f.video.paused, true);
+    assert.match(f.elements.status.textContent, /could not load/);
+  } finally {
+    MockHls.throwOnCreate = false;
+  }
+});
+
+test('native child source errors surface even when the video element emits no error event', () => {
+  const f = fixture(true);
+  delete f.video.attributes.src;
+  const source = childSource('movie.m3u8', 'application/vnd.apple.mpegurl');
+  source.addEventListener = (name, callback) => {
+    source[name] = callback;
+  };
+  source.removeEventListener = () => {};
+  f.video.sources = [source];
+  f.video.canPlayType = () => 'probably';
+  initNativeVideo(f.root);
+  assert.equal(typeof source.error, 'function');
+  source.error();
+  assert.equal(f.root.dataset.videoState, 'error');
+  assert.match(f.elements.status.textContent, /could not load/);
+});
+
+test('media recovery resumes requested playback but respects a later viewport pause', () => {
+  for (const leaveViewport of [false, true]) {
+    const f = fixture();
+    f.video.attributes.src = 'movie.m3u8';
+    initNativeVideo(f.root);
+    f.observer.change([{ isIntersecting: true }]);
+    const hls = MockHls.instances.at(-1);
+    hls.recoverMediaError = () => f.video.pause();
+    hls.emit('error', { fatal: true, type: 'mediaError' });
+    if (leaveViewport) f.observer.change([{ isIntersecting: false }]);
+    hls.emit('attached');
+    assert.equal(f.video.paused, leaveViewport);
+  }
+});
+
+test('HLS backgrounds defer loading for reduced motion and save-data until explicit Play', () => {
+  for (const preference of ['motion', 'data']) {
+    const f = fixture(false, preference === 'motion');
+    f.video.attributes.src = 'movie.m3u8';
+    f.view.navigator.connection.saveData = preference === 'data';
+    const count = MockHls.instances.length;
+    initNativeVideo(f.root);
+    f.observer.change([{ isIntersecting: true }]);
+    assert.equal(MockHls.instances.length, count);
+    assert.equal(f.video.paused, true);
+    f.toggle.click();
+    assert.equal(MockHls.instances.length, count + 1);
+    assert.equal(f.video.paused, false);
+    f.document.hidden = true;
+    f.document.visibilitychange();
+    MockHls.instances.at(-1).emit('attached');
+    assert.equal(f.video.paused, true);
+  }
+});
+
+test('an aborted pending HLS play after a viewport pause does not report a playback failure', async () => {
+  const f = fixture();
+  f.video.attributes.src = 'movie.m3u8';
+  let rejectPlay;
+  f.video.play = () =>
+    new Promise((resolve, reject) => {
+      rejectPlay = reject;
+    });
+  initNativeVideo(f.root);
+  f.observer.change([{ isIntersecting: true }]);
+  f.observer.change([{ isIntersecting: false }]);
+  rejectPlay(new DOMException('Interrupted by pause', 'AbortError'));
+  await Promise.resolve();
+  assert.equal(f.elements.status.hidden, true);
 });

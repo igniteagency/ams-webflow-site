@@ -1,3 +1,8 @@
+import Hls from 'hls.js';
+
+const HLS_TYPE = /^(?:application\/(?:vnd\.apple\.mpegurl|x-mpegurl))(?:\s*;|$)/i;
+const HLS_URL = /\.m3u8(?:[?#]|$)/i;
+
 function show(element: HTMLElement | null, visible: boolean) {
   if (!element) return;
   element.hidden = !visible;
@@ -16,6 +21,83 @@ export function initNativeVideo(root: HTMLElement) {
   if (!video || !toggle || root.dataset.videoReady) return;
   const controlsMode = video.dataset.videoPlayer?.toLowerCase() === 'true';
   const doc = root.ownerDocument;
+  const view = doc.defaultView;
+  const motion = view?.matchMedia('(prefers-reduced-motion: reduce)');
+  const connection = (
+    view?.navigator as Navigator & {
+      connection?: {
+        saveData?: boolean;
+        addEventListener?: EventTarget['addEventListener'];
+        removeEventListener?: EventTarget['removeEventListener'];
+      };
+    }
+  )?.connection;
+  let disposed = false;
+  const disposers: (() => void)[] = [];
+  const on = <T extends Event>(
+    target: {
+      addEventListener?: EventTarget['addEventListener'];
+      removeEventListener?: EventTarget['removeEventListener'];
+    },
+    name: string,
+    callback: (event: T) => void
+  ) => {
+    target.addEventListener?.(name, callback as EventListener);
+    disposers.push(() => target.removeEventListener?.(name, callback as EventListener));
+  };
+  const originalSrc = video.getAttribute('src');
+  const authoredSource = video.getAttribute('src')
+    ? video
+    : Array.from(video.querySelectorAll<HTMLSourceElement>('source[src]')).find((source) => {
+        const type = source.getAttribute('type') || '';
+        return (
+          !type ||
+          HLS_TYPE.test(type) ||
+          HLS_URL.test(source.getAttribute('src') || '') ||
+          video.canPlayType(type)
+        );
+      });
+  const source = authoredSource?.getAttribute('src') || '';
+  const isHls = HLS_URL.test(source) || HLS_TYPE.test(authoredSource?.getAttribute('type') || '');
+  const useHls = isHls && !video.canPlayType('application/vnd.apple.mpegurl');
+  let hls: Hls | undefined;
+  let failed = false;
+  let networkRecoveries = 0;
+  let mediaRecoveries = 0;
+  let nativeRetry = false;
+  let nativeRecoveries = 0;
+  let playRequested = false;
+  const pause = () => {
+    playRequested = false;
+    video.pause();
+  };
+
+  const cleanup = () => {
+    if (disposed) return;
+    disposed = true;
+    disposers.forEach((dispose) => dispose());
+    hls?.destroy();
+    hls = undefined;
+    pause();
+    if (useHls) {
+      if (originalSrc === null) video.removeAttribute('src');
+      else video.setAttribute('src', originalSrc);
+    }
+    delete root.dataset.videoReady;
+    delete root.dataset.videoControlsReady;
+    delete root.dataset.videoControlsHidden;
+  };
+  if (view)
+    on(view, 'pagehide', (event: PageTransitionEvent) => {
+      if (!event.persisted) cleanup();
+    });
+  if (view?.MutationObserver) {
+    const observer = new view.MutationObserver(() => {
+      if (!root.isConnected) cleanup();
+    });
+    observer.observe(doc, { childList: true, subtree: true });
+    disposers.push(() => observer.disconnect());
+  }
 
   const status = find<HTMLElement>('status');
   const seek = find<HTMLInputElement>('seek');
@@ -46,7 +128,7 @@ export function initNativeVideo(root: HTMLElement) {
   };
   const sync = () => {
     const paused = video.paused || video.ended;
-    root.dataset.videoState = video.error ? 'error' : paused ? 'paused' : 'playing';
+    root.dataset.videoState = failed || video.error ? 'error' : paused ? 'paused' : 'playing';
     toggle.setAttribute('aria-label', paused ? 'Play video' : 'Pause video');
     show(playIcon, paused);
     show(pauseIcon, !paused);
@@ -66,20 +148,94 @@ export function initNativeVideo(root: HTMLElement) {
     }
     if (volume) volume.value = String(video.muted ? 0 : video.volume);
   };
-  const play = () => {
+  const fail = (text = 'Video could not load. Check the video source and reload the page.') => {
+    failed = true;
+    hls?.destroy();
+    hls = undefined;
+    pause();
+    message(text);
+    sync();
+  };
+  if (isHls && !useHls && authoredSource && authoredSource !== video)
+    on(authoredSource, 'error', () => fail());
+  const play = (explicit = false) => {
+    if (disposed) return;
+    if (nativeRetry && explicit) {
+      nativeRetry = false;
+      failed = false;
+      nativeRecoveries++;
+      video.load();
+    }
+    if (disposed || failed) return;
     message('');
-    return video.play().catch(() => {
+    playRequested = true;
+    if (useHls && !hls) {
+      if (!Hls.isSupported()) {
+        fail('HLS video is not supported in this browser.');
+        return;
+      }
+      try {
+        hls = new Hls({ autoStartLoad: false });
+        const instance = hls;
+        instance.on(Hls.Events.MEDIA_ATTACHED, () => {
+          if (!disposed && !failed && playRequested) void play();
+        });
+        instance.on(Hls.Events.ERROR, (_, data) => {
+          if (!data.fatal || failed) return;
+          const code = data.response?.code || 0;
+          if (
+            data.type === Hls.ErrorTypes.NETWORK_ERROR &&
+            !(code >= 400 && code < 500 && code !== 408 && code !== 429) &&
+            networkRecoveries++ < 1
+          ) {
+            if (data.details === 'manifestLoadError' || data.details === 'manifestLoadTimeOut')
+              instance.loadSource(source);
+            else instance.startLoad();
+          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries++ < 1)
+            instance.recoverMediaError();
+          else fail();
+        });
+        instance.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (
+            view?.matchMedia('(min-width: 1024px) and (hover: hover) and (pointer: fine)')
+              .matches &&
+            !motion?.matches &&
+            !connection?.saveData
+          ) {
+            let preferred = -1;
+            instance.levels.forEach((level, index) => {
+              if (
+                level.height > 0 &&
+                level.height <= 1080 &&
+                (preferred === -1 || level.height > instance.levels[preferred].height)
+              )
+                preferred = index;
+            });
+            instance.startLevel = preferred;
+          }
+          instance.startLoad();
+        });
+        hls.loadSource(source);
+        hls.attachMedia(video);
+      } catch (error) {
+        console.error('Video HLS setup failed.', error);
+        fail();
+        return;
+      }
+    }
+    return video.play().catch((error) => {
+      if (disposed || failed || error?.name === 'AbortError') return;
       message('Playback could not start. Press Play to try again.');
       sync();
     });
   };
   let userPaused = false;
   let userStarted = false;
-  toggle.addEventListener('click', () => {
+  on(toggle, 'click', () => {
     userPaused = !video.paused && !video.ended;
     userStarted = !userPaused;
-    if (userPaused) video.pause();
-    else void play();
+    if (userPaused) pause();
+    else void play(true);
   });
   for (const event of [
     'play',
@@ -90,27 +246,40 @@ export function initNativeVideo(root: HTMLElement) {
     'loadedmetadata',
     'volumechange',
   ])
-    video.addEventListener(event, sync);
-  video.addEventListener('error', () => {
+    on(video, event, sync);
+  on(video, 'error', () => {
+    if (isHls) {
+      if (useHls) return;
+      nativeRetry = nativeRecoveries < 1 && [2, 3].includes(video.error?.code || 0);
+      fail(
+        nativeRetry
+          ? 'Video could not load. Press Play to try again.'
+          : 'Video could not load. Check the video source and reload the page.'
+      );
+      return;
+    }
     message('Video could not load. Check the video source and try again.');
     sync();
   });
-  seek?.addEventListener('input', () => {
-    if (Number.isFinite(video.duration) && video.duration > 0)
-      video.currentTime = Math.min(video.duration, Math.max(0, Number(seek.value)));
-    sync();
-  });
-  mute?.addEventListener('click', () => {
-    const silent = video.muted || video.volume === 0;
-    if (video.volume === 0) video.volume = 1;
-    video.muted = !silent;
-    sync();
-  });
-  volume?.addEventListener('input', () => {
-    video.volume = Math.min(1, Math.max(0, Number(volume.value)));
-    video.muted = video.volume === 0;
-    sync();
-  });
+  if (seek)
+    on(seek, 'input', () => {
+      if (Number.isFinite(video.duration) && video.duration > 0)
+        video.currentTime = Math.min(video.duration, Math.max(0, Number(seek.value)));
+      sync();
+    });
+  if (mute)
+    on(mute, 'click', () => {
+      const silent = video.muted || video.volume === 0;
+      if (video.volume === 0) video.volume = 1;
+      video.muted = !silent;
+      sync();
+    });
+  if (volume)
+    on(volume, 'input', () => {
+      video.volume = Math.min(1, Math.max(0, Number(volume.value)));
+      video.muted = video.volume === 0;
+      sync();
+    });
   const syncFullscreen = () => {
     const active = doc.fullscreenElement === root;
     fullscreen?.setAttribute('aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen');
@@ -118,20 +287,22 @@ export function initNativeVideo(root: HTMLElement) {
     show(find<HTMLElement>('fullscreen-exit-icon'), active);
   };
   if (fullscreen) fullscreen.disabled = !doc.fullscreenEnabled || !root.requestFullscreen;
-  fullscreen?.addEventListener('click', () => {
-    const operation =
-      doc.fullscreenElement === root ? doc.exitFullscreen() : root.requestFullscreen();
-    operation.catch(() => message('Fullscreen is unavailable in this browser.'));
-  });
-  doc.addEventListener('fullscreenchange', syncFullscreen);
+  if (fullscreen)
+    on(fullscreen, 'click', () => {
+      const operation =
+        doc.fullscreenElement === root ? doc.exitFullscreen() : root.requestFullscreen();
+      operation.catch(() => message('Fullscreen is unavailable in this browser.'));
+    });
+  on(doc, 'fullscreenchange', syncFullscreen);
   syncFullscreen();
   sync();
   if (controlsMode) {
     const view = doc.defaultView;
     const hover = view?.matchMedia('(hover: hover) and (pointer: fine)');
     const controls = find<HTMLElement>('controls');
-    if (!view || !hover || !controls) return;
+    if (!view || !hover || !controls) return cleanup;
     let timer: number | undefined;
+    disposers.push(() => view.clearTimeout(timer));
     let over = root.matches(':hover');
     const pointers = new Set<number>();
     const reveal = () => {
@@ -146,8 +317,10 @@ export function initNativeVideo(root: HTMLElement) {
       !pointers.size &&
       !video.paused &&
       !video.ended &&
+      !failed &&
       !video.error;
     const update = () => {
+      if (disposed) return;
       reveal();
       if (canHide())
         timer = view.setTimeout(() => {
@@ -156,44 +329,35 @@ export function initNativeVideo(root: HTMLElement) {
         }, 2000);
     };
     root.dataset.videoControlsReady = 'true';
-    root.addEventListener('pointerenter', () => {
+    on(root, 'pointerenter', () => {
       over = true;
       reveal();
     });
-    root.addEventListener('pointerleave', () => {
+    on(root, 'pointerleave', () => {
       over = false;
       update();
     });
-    root.addEventListener('focusin', reveal);
-    root.addEventListener('focusout', () => {
+    on(root, 'focusin', reveal);
+    on(root, 'focusout', () => {
       view.queueMicrotask(update);
     });
-    controls.addEventListener('pointerdown', (event) => {
+    on(controls, 'pointerdown', (event: PointerEvent) => {
       pointers.add(event.pointerId);
       reveal();
     });
     const release = (event: PointerEvent) => {
       if (pointers.delete(event.pointerId)) update();
     };
-    doc.addEventListener('pointerup', release);
-    doc.addEventListener('pointercancel', release);
-    for (const event of ['play', 'pause', 'ended', 'error']) video.addEventListener(event, update);
-    hover.addEventListener('change', update);
+    on(doc, 'pointerup', release);
+    on(doc, 'pointercancel', release);
+    for (const event of ['play', 'pause', 'ended', 'error']) on(video, event, update);
+    on(hover, 'change', update);
     update();
-    return;
+    return cleanup;
   }
-  const view = doc.defaultView;
-  const motion = view?.matchMedia('(prefers-reduced-motion: reduce)');
-  const connection = (
-    view?.navigator as Navigator & {
-      connection?: {
-        saveData?: boolean;
-        addEventListener?: (name: string, callback: () => void) => void;
-      };
-    }
-  )?.connection;
   let inView = !view?.IntersectionObserver;
   const updatePlayback = () => {
+    if (disposed) return;
     const allowed =
       inView &&
       !doc.hidden &&
@@ -201,20 +365,23 @@ export function initNativeVideo(root: HTMLElement) {
       (userStarted || (!motion?.matches && !connection?.saveData));
     video.autoplay = allowed;
     if (allowed) void play();
-    else video.pause();
+    else pause();
   };
-  motion?.addEventListener('change', updatePlayback);
-  connection?.addEventListener?.('change', updatePlayback);
-  doc.addEventListener('visibilitychange', updatePlayback);
+  if (motion) on(motion, 'change', updatePlayback);
+  if (connection) on(connection, 'change', updatePlayback);
+  on(doc, 'visibilitychange', updatePlayback);
   if (view?.IntersectionObserver) {
-    new view.IntersectionObserver(
+    const observer = new view.IntersectionObserver(
       ([entry]) => {
         inView = entry.isIntersecting;
         updatePlayback();
       },
       { threshold: 0.05 }
-    ).observe(root);
+    );
+    observer.observe(root);
+    disposers.push(() => observer.disconnect());
   } else updatePlayback();
+  return cleanup;
 }
 
 export function initNativeVideos(scope: ParentNode = document) {

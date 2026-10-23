@@ -13,7 +13,8 @@
   "description": "AMS Group Webflow site JavaScript",
   "scripts": {
     "dev": "cross-env NODE_ENV=development bun run ./bin/build.js",
-    "build": "cross-env NODE_ENV=production bun run ./bin/build.js"
+    "build": "cross-env NODE_ENV=production bun run ./bin/build.js",
+    "test": "node --experimental-test-module-mocks --test tests/*.test.mjs"
   },
   "devDependencies": {
     "@finsweet/eslint-config": "^3.0.3",
@@ -37,6 +38,7 @@
   },
   "dependencies": {
     "@finsweet/ts-utils": "^0.40.0",
-    "countup.js": "2.9.0"
+    "countup.js": "2.9.0",
+    "hls.js": "1.7.3"
   }
 }

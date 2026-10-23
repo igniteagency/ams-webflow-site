@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AMS local HLS fixture — not the published site</title>
+    <style>
+      body {
+        margin: 2rem auto;
+        max-width: 960px;
+        padding: 0 1rem;
+        font: 16px system-ui;
+      }
+      video {
+        display: block;
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        background: #17202b;
+        object-fit: cover;
+      }
+      button,
+      input {
+        margin: 0.5rem;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      [data-video-controls-hidden='true'] [data-video-el='controls'] {
+        opacity: 0;
+      }
+      #background {
+        margin-top: 100vh;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>AMS local HLS fixture</h1>
+    <p>
+      This loads the local production bundle and reads the public Bunny stream. It does not test or
+      change the published AMS site.
+    </p>
+    <p>
+      Play, seek, mute, and pause the first player. Scroll to the background; it should autoplay and
+      loop in view. Reduced motion/save-data should leave it paused until Play.
+    </p>
+    <section id="controlled" data-video-controller="starter-native-v1">
+      <h2>Controls mode · child source</h2>
+      <video
+        data-video-el="player"
+        data-video-player="True"
+        preload="none"
+        poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='960' height='540'%3E%3Crect width='960' height='540' fill='%2317202b'/%3E%3C/svg%3E"
+      >
+        <source
+          src="https://vz-a8209381-f64.b-cdn.net/adff7128-8019-4292-b12d-2e84754650c3/playlist.m3u8"
+          type="application/vnd.apple.mpegurl"
+        />
+      </video>
+      <button data-video-el="toggle">
+        <span data-video-el="play-icon">▶</span><span data-video-el="pause-icon" hidden>Ⅱ</span>
+      </button>
+      <div data-video-el="controls">
+        <input data-video-el="seek" aria-label="Seek" type="range" min="0" step="0.1" />
+        <span data-video-el="time"></span>
+        <button data-video-el="mute">
+          <span data-video-el="volume-up-icon">Sound</span
+          ><span data-video-el="volume-off-icon" hidden>Muted</span>
+        </button>
+        <input data-video-el="volume" aria-label="Volume" type="range" min="0" max="1" step="0.1" />
+        <button data-video-el="fullscreen">
+          <span data-video-el="fullscreen-icon">Fullscreen</span
+          ><span data-video-el="fullscreen-exit-icon" hidden>Exit fullscreen</span>
+        </button>
+      </div>
+      <p data-video-el="status" role="status" hidden></p>
+    </section>
+    <section id="background" data-video-controller="starter-native-v1">
+      <h2>Background mode · direct source</h2>
+      <video
+        data-video-el="player"
+        data-video-player="false"
+        preload="none"
+        src="https://vz-a8209381-f64.b-cdn.net/adff7128-8019-4292-b12d-2e84754650c3/playlist.m3u8"
+        poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='960' height='540'%3E%3Crect width='960' height='540' fill='%2317202b'/%3E%3C/svg%3E"
+      ></video>
+      <button data-video-el="toggle">
+        <span data-video-el="play-icon">▶</span><span data-video-el="pause-icon" hidden>Ⅱ</span>
+      </button>
+      <p data-video-el="status" role="status" hidden></p>
+    </section>
+    <script>
+      window.Webflow = [];
+    </script>
+    <script src="../../dist/prod/components/native-video.js"></script>
+    <script>
+      window.Webflow.forEach((init) => init());
+    </script>
+  </body>
+</html>

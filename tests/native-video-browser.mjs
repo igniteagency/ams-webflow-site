@@ -21,6 +21,14 @@ let browser;
 try {
   browser = await chromium.launch({ channel: 'chrome', headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  if (process.env.FORCE_HLS_JS === '1') {
+    await page.addInitScript(() => {
+      const original = HTMLMediaElement.prototype.canPlayType;
+      HTMLMediaElement.prototype.canPlayType = function (type) {
+        return /mpegurl/i.test(type) ? '' : original.call(this, type);
+      };
+    });
+  }
   const errors = [];
   const manifests = [];
   page.on('pageerror', (error) => errors.push(error.message));

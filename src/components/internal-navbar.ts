@@ -2,6 +2,7 @@ const HOME_PAGE_ID = '6ac58464423a10a23dfeb5a0';
 const INITIALIZED = Symbol.for('ams.internalNavbar');
 const BACKGROUND = 'rgba(128,128,128,0.5)';
 const BLUR = 'blur(36.3px)';
+const FADE_SCROLL_DISTANCE = 0.7 * 0.2;
 
 window.Webflow = window.Webflow || [];
 window.Webflow.push(() => {
@@ -19,36 +20,33 @@ window.Webflow.push(() => {
   nav[INITIALIZED] = true;
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
   const borderColor = getComputedStyle(border).borderBottomColor;
-  let scrolled: boolean | undefined;
-
-  function update(self: ScrollTrigger, immediate = false) {
-    const next = self.scroll() >= self.start;
-    if (next === scrolled && !immediate) return;
-    scrolled = next;
-    const timing = { duration: immediate || reduced.matches ? 0 : 0.2, overwrite: true };
-    gsap.to(bar, {
-      backgroundColor: next ? BACKGROUND : 'rgba(128,128,128,0)',
-      backdropFilter: next ? BLUR : 'blur(0px)',
-      ...timing,
-    });
-    gsap.to(border, { borderBottomColor: next ? 'transparent' : borderColor, ...timing });
-  }
-
   try {
     gsap.registerPlugin(ScrollTrigger);
     gsap.set(bar, { transitionProperty: 'color' });
+    const fade = gsap.timeline({ paused: true });
+    fade.fromTo(bar,
+      { backgroundColor: 'rgba(128,128,128,0)', backdropFilter: 'blur(0px)' },
+      { backgroundColor: BACKGROUND, backdropFilter: BLUR, duration: 1, ease: 'none' }, 0);
+    fade.fromTo(border,
+      { borderBottomColor: borderColor },
+      { borderBottomColor: 'transparent', duration: 1, ease: 'none' }, 0);
+    const update = (self: ScrollTrigger) => {
+      const progress = Math.min(1, Math.max(0,
+        (self.scroll() - self.start) / (self.end - self.start)));
+      fade.progress(reduced.matches ? (progress > 0 ? 1 : 0) : progress);
+    };
     const trigger = ScrollTrigger.create({
       trigger: hero,
-      start: () => `bottom top+=${bar.getBoundingClientRect().bottom}`,
-      end: 'max',
-      onUpdate: (self) => update(self),
-      onRefresh: (self) => update(self, true),
+      start: () => `center top+=${bar.getBoundingClientRect().bottom}`,
+      end: () => `+=${Math.max(1, innerHeight * FADE_SCROLL_DISTANCE)}`,
+      onUpdate: update,
+      onRefresh: update,
     });
-    update(trigger, true);
+    update(trigger);
     const refresh = () => trigger.refresh();
     document.fonts.ready.then(refresh);
     addEventListener('pageshow', refresh);
-    reduced.addEventListener('change', () => update(trigger, true));
+    reduced.addEventListener('change', () => update(trigger));
   } catch (error) {
     delete nav[INITIALIZED];
     console.error('Internal navbar scroll could not initialise:', error);

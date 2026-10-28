@@ -50,7 +50,8 @@ test('fade starts at hero midpoint over the same 14vh distance as home and rever
   assert.equal(state.calls[0].values.backdropFilter, 'blur(36.3px)');
   assert.equal(state.progress.at(-1), 1);
   state.setScroll(10000);
-  assert.equal(state.calls.at(-1).values.borderBottomColor, 'transparent');
+  assert.equal(state.calls.at(-1).from['--internal-nav-border-opacity'], 1);
+  assert.equal(state.calls.at(-1).values['--internal-nav-border-opacity'], 0);
   state.setScroll(0);
   assert.equal(state.progress.at(-1), 0);
   assert.ok(state.calls.every(({ target }) => target === state.bar || target === state.border));

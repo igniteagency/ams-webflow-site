@@ -23,13 +23,17 @@ window.Webflow.push(() => {
   try {
     gsap.registerPlugin(ScrollTrigger);
     gsap.set(bar, { transitionProperty: 'color' });
+    gsap.set(border, {
+      '--internal-nav-border-opacity': 1,
+      borderBottomColor: `color-mix(in srgb, ${borderColor} calc(var(--internal-nav-border-opacity) * 100%), transparent)`,
+    });
     const fade = gsap.timeline({ paused: true });
     fade.fromTo(bar,
       { backgroundColor: 'rgba(128,128,128,0)', backdropFilter: 'blur(0px)' },
       { backgroundColor: BACKGROUND, backdropFilter: BLUR, duration: 1, ease: 'none' }, 0);
     fade.fromTo(border,
-      { borderBottomColor: borderColor },
-      { borderBottomColor: 'transparent', duration: 1, ease: 'none' }, 0);
+      { '--internal-nav-border-opacity': 1 },
+      { '--internal-nav-border-opacity': 0, duration: 1, ease: 'none' }, 0);
     const update = (self: ScrollTrigger) => {
       const progress = Math.min(1, Math.max(0,
         (self.scroll() - self.start) / (self.end - self.start)));

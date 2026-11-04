@@ -8,6 +8,23 @@ const calculateDuration = (value: number): number => {
 
 const initCounters = (): void => {
   const counterElements = document.querySelectorAll<HTMLElement>('[data-el="counter"]');
+  const pending = new Map<HTMLElement, CountUp>();
+  const observer =
+    typeof IntersectionObserver === 'undefined'
+      ? null
+      : new IntersectionObserver(
+          (entries) => {
+            entries.forEach((entry) => {
+              if (!entry.isIntersecting) return;
+              const counter = pending.get(entry.target as HTMLElement);
+              if (!counter) return;
+              pending.delete(entry.target as HTMLElement);
+              observer?.unobserve(entry.target);
+              counter.start();
+            });
+          },
+          { threshold: 0.1 }
+        );
 
   counterElements.forEach((element) => {
     // Avoid double initialization
@@ -53,13 +70,17 @@ const initCounters = (): void => {
         startVal: 0,
         duration,
         decimalPlaces,
-        enableScrollSpy: true,
-        scrollSpyOnce: true,
         useGrouping: rawVal.includes(','),
       });
 
       if (countUp.error) {
         console.error('CountUp error:', countUp.error);
+        span.textContent = rawVal;
+      } else if (observer) {
+        pending.set(span, countUp);
+        observer.observe(span);
+      } else {
+        countUp.start();
       }
     });
   });

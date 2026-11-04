@@ -38,10 +38,28 @@ test('counter preserves formatting, parses ungrouped thousands, and avoids dupli
   const instances = [];
   class CountUp {
     constructor(span, endValue, options) {
-      instances.push({ span, endValue, options });
+      this.record = { span, endValue, options, starts: 0 };
+      instances.push(this.record);
     }
     start() {
-      assert.fail('scroll spy must own the start');
+      this.record.starts++;
+    }
+  }
+  const observers = [];
+  class MockIntersectionObserver {
+    targets = new Set();
+    constructor(callback) {
+      this.callback = callback;
+      observers.push(this);
+    }
+    observe(target) {
+      this.targets.add(target);
+    }
+    unobserve(target) {
+      this.targets.delete(target);
+    }
+    enter(target) {
+      this.callback([{ target, isIntersecting: true }]);
     }
   }
   const createElement = (textContent) => {
@@ -93,6 +111,7 @@ test('counter preserves formatting, parses ungrouped thousands, and avoids dupli
   });
   const context = vm.createContext({
     MockCountUp: CountUp,
+    IntersectionObserver: MockIntersectionObserver,
     console,
     document: { querySelectorAll: () => elements },
     window: { matchMedia: () => ({ matches: false }) },
@@ -106,7 +125,13 @@ test('counter preserves formatting, parses ungrouped thousands, and avoids dupli
   assert.equal(instances[0].options.decimalPlaces, 2);
   assert.equal(instances[0].options.useGrouping, false);
   assert.equal(instances[1].options.useGrouping, true);
-  assert.ok(instances.every((item) => item.options.enableScrollSpy && item.options.scrollSpyOnce));
+  assert.ok(instances.every((item) => item.starts === 0));
+  instances.forEach((item) => {
+    observers[0].enter(item.span);
+    observers[0].enter(item.span);
+  });
+  assert.ok(instances.every((item) => item.starts === 1));
+  assert.equal(observers[0].targets.size, 0);
   assert.match(elements[0].innerHTML, /^\$<span/);
   assert.match(elements[2].innerHTML, /<\/span>%$/);
   assert.match(elements[3].innerHTML, /<\/span>K$/);
@@ -115,6 +140,7 @@ test('counter preserves formatting, parses ungrouped thousands, and avoids dupli
   const reduced = createElement('30+');
   const reducedContext = vm.createContext({
     MockCountUp: CountUp,
+    IntersectionObserver: MockIntersectionObserver,
     console,
     document: { querySelectorAll: () => [reduced] },
     window: { matchMedia: () => ({ matches: true }) },

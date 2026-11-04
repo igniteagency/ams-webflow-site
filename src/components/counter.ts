@@ -18,7 +18,9 @@ const initCounters = (): void => {
     const numberRegex = /(-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?)/g;
 
     const parts = originalText.split(numberRegex);
-    if (parts.length <= 1) return; // No numbers found
+    // Count a single quantity, never ratios, dates, times, or ranges such as 24/7.
+    if (parts.length !== 3 || /[\d/:–—]/.test(parts[0] + parts[2])) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
     let resultHtml = '';
     for (let i = 0; i < parts.length; i++) {

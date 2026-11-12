@@ -1,3 +1,4 @@
+import { initHomeHeroScene } from '../utils/home-hero-scene';
 import { homeLogoMaskImage, homeLogoMaskRect } from '../utils/home-logo-mask';
 
 const HOME_PAGE_ID = '6ac58464423a10a23dfeb5a0';
@@ -7,9 +8,18 @@ const LIFT_DISTANCE = 0.16;
 const INITIALIZED = Symbol.for('ams.homeLogoScroll');
 type HomeHero = HTMLElement & { [INITIALIZED]?: boolean };
 
+// This head script registers before Webflow's ready handler starts video playback.
+function initScene() {
+  if (document.documentElement.dataset.wfPage === HOME_PAGE_ID) initHomeHeroScene();
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initScene, { once: true });
+} else initScene();
+
 window.Webflow = window.Webflow || [];
 window.Webflow.push(() => {
   if (document.documentElement.dataset.wfPage !== HOME_PAGE_ID) return;
+  initHomeHeroScene();
 
   const artwork = document.querySelector('.ams-hero_artwork');
   const hero = artwork?.closest<HomeHero>('.section_hero-header');

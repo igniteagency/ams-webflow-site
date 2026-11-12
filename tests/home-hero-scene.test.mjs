@@ -43,7 +43,7 @@ function fixture(
     querySelector: (selector) =>
       ({
         '.ams-hero_artwork': artwork,
-        '.component-style[data-hero-sydney-video]': settings,
+        '.bg-visual_component[data-hero-sydney-video]': settings,
         '[data-video-controller="starter-native-v1"]': controller,
       })[selector] || null,
   };

@@ -9,7 +9,7 @@ export function initHomeHeroScene() {
   const video = controller?.querySelector<HTMLVideoElement>('[data-video-el="player"]');
   const source = video?.querySelector<HTMLSourceElement>('source');
   const artwork = hero.querySelector('.ams-hero_artwork');
-  const settings = hero.querySelector('.component-style[data-hero-sydney-video]');
+  const settings = hero.querySelector('.bg-visual_component[data-hero-sydney-video]');
   if (!video || !source || !artwork || controller?.dataset.videoReady) return;
 
   const scene = SCENES[Math.random() < 0.5 ? 0 : 1];

@@ -1,4 +1,4 @@
-import { initHomeHeroScene } from '../utils/home-hero-scene';
+import { initHomeHeroScene, prepareHomeHeroScene } from '../utils/home-hero-scene';
 import { homeLogoMaskImage, homeLogoMaskRect } from '../utils/home-logo-mask';
 
 const HOME_PAGE_ID = '6ac58464423a10a23dfeb5a0';
@@ -7,6 +7,9 @@ const SCROLL_DISTANCE = 0.7;
 const LIFT_DISTANCE = 0.16;
 const INITIALIZED = Symbol.for('ams.homeLogoScroll');
 type HomeHero = HTMLElement & { [INITIALIZED]?: boolean };
+
+// Mark the scene pending in the head, before the authored poster can paint.
+if (document.documentElement.dataset.wfPage === HOME_PAGE_ID) prepareHomeHeroScene();
 
 // This head script registers before Webflow's ready handler starts video playback.
 function initScene() {

@@ -9,14 +9,25 @@ const compiled = await build({
   write: false,
 });
 const urls = {
-  sydney: 'https://vz-a8209381-f64.b-cdn.net/adff7128-8019-4292-b12d-2e84754650c3/',
-  melbourne:
-    'https://australian-motoring-services.webflow.io/video-manager/media/3066a941-d42f-48e5-a653-9211f886c662/',
+  sydney: 'https://media.example/sydney/',
+  melbourne: 'https://media.example/melbourne/',
+};
+const media = {
+  'data-hero-sydney-video': urls.sydney + 'playlist.m3u8',
+  'data-hero-sydney-poster': urls.sydney + 'thumbnail.jpg',
+  'data-hero-melbourne-video': urls.melbourne + 'playlist.m3u8',
+  'data-hero-melbourne-poster': urls.melbourne + 'poster',
 };
 
 function fixture(
   random,
-  { ready = 'loading', page = '6ac58464423a10a23dfeb5a0', playing = false, masks = true } = {}
+  {
+    ready = 'loading',
+    page = '6ac58464423a10a23dfeb5a0',
+    playing = false,
+    masks = true,
+    fields = media,
+  } = {}
 ) {
   const attributes = {};
   const source = {
@@ -27,8 +38,14 @@ function fixture(
   const video = { querySelector: () => source, setAttribute: source.setAttribute };
   const controller = { dataset: { videoReady: playing ? 'true' : '' }, querySelector: () => video };
   const artwork = { style: { setProperty: source.setAttribute }, querySelector: () => null };
+  const settings = fields && { getAttribute: (key) => fields[key] ?? null };
   const hero = {
-    querySelector: (selector) => (selector === '.ams-hero_artwork' ? artwork : controller),
+    querySelector: (selector) =>
+      ({
+        '.ams-hero_artwork': artwork,
+        '.component-style[data-hero-sydney-video]': settings,
+        '[data-video-controller="starter-native-v1"]': controller,
+      })[selector] || null,
   };
   artwork.closest = () => hero;
   const events = new Map();
@@ -108,4 +125,35 @@ test('missing scene CSS keeps the authored video, poster and mask together', () 
   const f = fixture(0, { masks: false });
   f.events.get('DOMContentLoaded')();
   assert.deepEqual(f.attributes, {});
+});
+
+test('editor changes to either Webflow media pair require no script update', () => {
+  for (const [random, scene] of [
+    [0, 'sydney'],
+    [0.9, 'melbourne'],
+  ]) {
+    const fields = {
+      ...media,
+      [`data-hero-${scene}-video`]: ' https://edited.example/new-video.m3u8 ',
+      [`data-hero-${scene}-poster`]: ' https://edited.example/new-poster.jpg ',
+    };
+    const f = fixture(random, { fields });
+    f.events.get('DOMContentLoaded')();
+    assert.equal(f.attributes['data-video-src'], fields[`data-hero-${scene}-video`].trim());
+    assert.equal(f.attributes.poster, fields[`data-hero-${scene}-poster`].trim());
+    assert.equal(f.attributes['--home-bridge-mask'], `url("--home-bridge-mask-${scene}.svg")`);
+  }
+});
+
+test('missing or incomplete Webflow media preserves the authored fallback as a pair', () => {
+  for (const fields of [
+    null,
+    {},
+    { ...media, 'data-hero-sydney-video': '' },
+    { ...media, 'data-hero-sydney-poster': ' ' },
+  ]) {
+    const f = fixture(0, { fields });
+    f.events.get('DOMContentLoaded')();
+    assert.deepEqual(f.attributes, {});
+  }
 });

@@ -1,17 +1,4 @@
-const SCENES = [
-  {
-    name: 'sydney',
-    video: 'https://vz-a8209381-f64.b-cdn.net/adff7128-8019-4292-b12d-2e84754650c3/playlist.m3u8',
-    poster: 'https://vz-a8209381-f64.b-cdn.net/adff7128-8019-4292-b12d-2e84754650c3/thumbnail.jpg',
-  },
-  {
-    name: 'melbourne',
-    video:
-      'https://australian-motoring-services.webflow.io/video-manager/media/3066a941-d42f-48e5-a653-9211f886c662/playlist.m3u8',
-    poster:
-      'https://australian-motoring-services.webflow.io/video-manager/media/3066a941-d42f-48e5-a653-9211f886c662/poster',
-  },
-] as const;
+const SCENES = ['sydney', 'melbourne'] as const;
 const SELECTED = Symbol.for('ams.homeHeroScene');
 type Hero = HTMLElement & { [SELECTED]?: string };
 
@@ -22,14 +9,17 @@ export function initHomeHeroScene() {
   const video = controller?.querySelector<HTMLVideoElement>('[data-video-el="player"]');
   const source = video?.querySelector<HTMLSourceElement>('source');
   const artwork = hero.querySelector('.ams-hero_artwork');
+  const settings = hero.querySelector('.component-style[data-hero-sydney-video]');
   if (!video || !source || !artwork || controller?.dataset.videoReady) return;
 
   const scene = SCENES[Math.random() < 0.5 ? 0 : 1];
-  const mask = getComputedStyle(artwork).getPropertyValue(`--home-bridge-mask-${scene.name}`);
-  if (!mask.trim()) return;
+  const videoUrl = settings?.getAttribute(`data-hero-${scene}-video`)?.trim();
+  const posterUrl = settings?.getAttribute(`data-hero-${scene}-poster`)?.trim();
+  const mask = getComputedStyle(artwork).getPropertyValue(`--home-bridge-mask-${scene}`);
+  if (!videoUrl || !posterUrl || !mask.trim()) return;
 
-  source.setAttribute('data-video-src', scene.video);
-  video.setAttribute('poster', scene.poster);
+  source.setAttribute('data-video-src', videoUrl);
+  video.setAttribute('poster', posterUrl);
   artwork.style.setProperty('--home-bridge-mask', mask);
-  hero[SELECTED] = scene.name;
+  hero[SELECTED] = scene;
 }

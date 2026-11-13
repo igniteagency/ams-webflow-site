@@ -1,0 +1,27 @@
+html[data-home-hero-scene] .section_hero-header .bg-visual_component {
+  background-image: var(--home-hero-preview);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+html[data-home-hero-scene] .section_hero-header .bg-visual_component .image-clip {
+  opacity: 0;
+}
+html[data-home-hero-scene="sydney"] .section_hero-header .ams-hero_artwork {
+  --home-bridge-mask: var(--home-bridge-mask-sydney);
+}
+html[data-home-hero-scene="melbourne"] .section_hero-header .ams-hero_artwork {
+  --home-bridge-mask: var(--home-bridge-mask-melbourne);
+}
+html[data-home-hero-scene] .section_hero-header [data-video-el="player"] {
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+html[data-home-hero-media="ready"] .section_hero-header [data-video-el="player"] {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-home-hero-scene] .section_hero-header [data-video-el="player"] {
+    transition: none;
+  }
+}

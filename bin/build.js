@@ -4,6 +4,8 @@ import fs from 'fs';
 import path from 'path';
 import glob from 'tiny-glob';
 
+import { buildHomeHead } from './build-home-head.js';
+
 const DEV_BUILD_PATH = './dist/dev';
 const PROD_BUILD_PATH = './dist/prod';
 const production = process.env.NODE_ENV === 'production';
@@ -79,6 +81,7 @@ try {
     console.log(`Serving at http://localhost:${port}`);
   } else {
     await esbuild.build(buildSettings);
+    await buildHomeHead(BUILD_DIRECTORY);
   }
 } catch (error) {
   console.error(error);
